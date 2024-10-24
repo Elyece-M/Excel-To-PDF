@@ -5,7 +5,7 @@ import win32com.client as win32
 import configparser
 import logging
 from tqdm import tqdm
-
+from PyPDF2 import PdfMerger
 issues_to_print = []
 
 # Set up logging
@@ -58,7 +58,7 @@ if not sheets_to_print or sheets_to_print == ['']:
 file_names = [file_name for file_name in os.listdir(working_directory) if file_name.endswith(".xlsx")]
 if not file_names:
     log.error("No Excel files found in the working directory. Please check the config file.")
-    input(f"\nNo Excel files found in the working directory: {working_directory}. "
+    input(f"\nNo Excel files found in the working directory: {os.path.abspath(working_directory)}. "
           "\nPlease check the config file and restart the program. Press enter to exit ")
     raise ValueError("No Excel files found in the working directory. Exiting.")
 
@@ -70,6 +70,7 @@ for file_name in tqdm(file_names):
     # Open the workbook
     workbook = excel.Workbooks.Open(os.path.join(working_directory, file_name))
     workbook_sheet_names = [sheet.Name for sheet in workbook.Sheets]
+    pdf_files = []  # List to hold individual PDF file paths
     for sheet_name in sheets_to_print:
         if sheet_name not in workbook_sheet_names:
             issue = f"Sheet '{sheet_name}' does not exist in workbook '{file_name}'. Please check the config file."
@@ -87,9 +88,40 @@ for file_name in tqdm(file_names):
             # Print the sheet to PDF
             sheet.ExportAsFixedFormat(0, pdf_file_name)
             log.info(f"Sheet '{sheet_name}' has been saved as PDF: {os.path.abspath(pdf_file_name)}")
+
+            # Add the PDF file path to the list
+            pdf_files.append(pdf_file_name)
         except Exception as e:
             issue = f"Error printing sheet '{sheet_name}' in workbook '{file_name}': {str(e)}"
             log.error(issue)
+
+    # Merge the individual PDFs into a single PDF file
+    try:
+        if pdf_files:
+            # Define the final output PDF file name
+            merged_pdf_file = os.path.join(working_directory, f"{file_name.replace('.xlsx', '.pdf')}")
+
+            # Initialize PdfMerger
+            merger = PdfMerger()
+
+            # Append each PDF file to the merger
+            for pdf_file in pdf_files:
+                merger.append(pdf_file)
+
+            # Write out the combined PDF
+            merger.write(merged_pdf_file)
+            merger.close()
+
+            log.info(f"All sheets have been combined into a single PDF: {os.path.abspath(merged_pdf_file)}")
+
+            # Delete the individual PDF files
+            for pdf_file in pdf_files:
+                log.info(f"Deleting individual PDF: {os.path.abspath(pdf_file)}")
+                os.remove(pdf_file)
+        else:
+            log.warning("No PDFs to merge.")
+    except Exception as e:
+        log.error(f"Error merging PDFs: {str(e)}")
 
     # Close the workbook
     workbook.Close(SaveChanges=False)
